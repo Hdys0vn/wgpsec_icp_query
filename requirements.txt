@@ -1,0 +1,10 @@
+aiohttp
+opencv-python
+torch
+onnx
+onnxruntime
+numpy==1.22
+pycryptodome
+ultralytics
+ujson
+pandas
