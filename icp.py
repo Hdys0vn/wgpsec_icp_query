@@ -104,9 +104,9 @@ class IcpQuery(object):
             'Accept': 'application/json, text/plain, */*'
         }
         try:
-            with self.session.post(self.url + "auth", data=auth_data, headers=base_header) as req:
-                t = req.json()
-                return t['params']['bussiness']
+            req = self.session.post(self.url + "auth", data=auth_data, headers=base_header)
+            t = req.json()
+            return t['params']['bussiness']
         except Exception as e:
             print(e)
             return e
@@ -127,29 +127,61 @@ class IcpQuery(object):
         }
         self.headers.pop("Uuid", "")
         self.headers.pop("Sign", "")
-        with self.session.post(self.url + "image/checkImage", json=data, headers=self.headers) as req:
-            r = req.json()
-            if r["success"]:
-                self.headers["Uuid"] = res["uuid"]
-                self.headers["Sign"] = r["params"]["sign"]
-                return r["params"]["sign"]
-            else:
-                return 'verf error'
+        req = self.session.post(self.url + "image/checkImage", json=data, headers=self.headers)
+        r = req.json()
+        if r["success"]:
+            self.headers["Uuid"] = res["uuid"]
+            self.headers["Sign"] = r["params"]["sign"]
+            return r["params"]["sign"]
+        else:
+            return 'verf error'
 
-    def get_icp_info(self):
+    def get_icp_req(self, data):
+        rh_data = json.dumps(data, ensure_ascii=False).encode("utf-8").decode("latin1").replace(" ", "")
+        req = self.session.post(self.url + "icpAbbreviateInfo/queryByCondition", headers=self.headers, data=rh_data,
+                                proxies={"https": "http://127.0.0.1:8080"}, verify=False)
+        res = req.json()
+        if res["code"] == 200:
+            return res
+        elif res["code"] == 401:
+            print(res["msg"])
+            time.sleep(2)
+            self.check_img()
+            return self.get_icp_req(self)
+        else:
+            print("请求失败")
+            print(req.text)
+
+    def get_icp_info(self, unit_name, service_type=1, page_num=0):
+        """
+        web 1
+        app 6
+        miniapp 7
+        fastapp 8
+        """
         self.check_img()
-        name = "小米"
+        page = 1
+        if page_num != 0:
+            page = page_num
         data = {
-            "pageNum": "",
-            "pageSize": "",
-            "unitName": name,
-            "serviceType": 1
+            "pageNum": page,
+            "pageSize": 40,
+            "unitName": unit_name,
+            "serviceType": service_type
         }
-        data = json.dumps(data, ensure_ascii=False).encode("utf-8").decode("latin1").replace(" ", "")
-        with self.session.post(self.url + "icpAbbreviateInfo/queryByCondition", headers=self.headers, data=data) as req:
-            return req.json()
+        res = self.get_icp_req(data)["params"]
+        res_data = []
+        res_data.extend(res["list"])
+        pages = res["pages"]
+        if pages > 1 and page_num != 0:
+            for page in range(2, pages + 1):
+                data["pageNum"] = page
+                time.sleep(2)
+                r = self.get_icp_req(data)
+                res_data.extend(r["params"]["list"])
+        return res_data
 
 
 if __name__ == '__main__':
     icp = IcpQuery()
-    print(icp.get_icp_info())
+    print(icp.get_icp_info("小米科技有限责任公司"))
