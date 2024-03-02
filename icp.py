@@ -3,8 +3,14 @@ author     : Keac@wgpsec
 Creat time : 2024/3/1
 Email      : admin@wgpsec.org
 """
-
+import argparse
+import datetime
 import json
+import logging
+import os
+import uuid
+
+import pandas as pd
 import requests
 import cv2
 import time
@@ -16,6 +22,9 @@ import random
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from detnate import detnate
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 def small_slice(small_image, big_image):
@@ -53,6 +62,7 @@ class IcpQuery(object):
         self.url = "https://hlwicpfwc.miit.gov.cn/icpproject_query/api/"
         self.headers = self.build_headers()
         self.p_uuid = ""
+        self.unit_name = ""
 
     def _init_session(self):
         self.session = requests.session()
@@ -138,8 +148,7 @@ class IcpQuery(object):
 
     def get_icp_req(self, data):
         rh_data = json.dumps(data, ensure_ascii=False).encode("utf-8").decode("latin1").replace(" ", "")
-        req = self.session.post(self.url + "icpAbbreviateInfo/queryByCondition", headers=self.headers, data=rh_data,
-                                proxies={"https": "http://127.0.0.1:8080"}, verify=False)
+        req = self.session.post(self.url + "icpAbbreviateInfo/queryByCondition", headers=self.headers, data=rh_data)
         res = req.json()
         if res["code"] == 200:
             return res
@@ -159,6 +168,7 @@ class IcpQuery(object):
         miniapp 7
         fastapp 8
         """
+        self.unit_name = unit_name
         self.check_img()
         page = 1
         if page_num != 0:
@@ -176,12 +186,41 @@ class IcpQuery(object):
         if pages > 1 and page_num != 0:
             for page in range(2, pages + 1):
                 data["pageNum"] = page
+                print(f"当前{page} / {pages}")
                 time.sleep(2)
                 r = self.get_icp_req(data)
                 res_data.extend(r["params"]["list"])
+        print(res_data)
         return res_data
+
+    def export_excel(self, data):
+        logger.info("导出 {} 信息".format(self.unit_name))
+        if not os.path.exists("res"):
+            os.mkdir("res")
+        xlsx = pd.ExcelWriter(r"res/{}-{}-{}.xlsx".format(datetime.date.today(), str(uuid.uuid4())[:4], self.unit_name))
+        app_names = ['contentTypeName', 'domain', 'domainId', 'leaderName', 'limitAccess', 'mainId', 'mainLicence',
+                     'natureName', 'serviceId', 'serviceLicence', 'unitName', 'updateRecordTime']
+        icp_info = pd.DataFrame(data, columns=app_names)
+        icp_info.to_excel(xlsx, sheet_name="ICP备案", index=False)
+        xlsx.close()
+        logger.info("导出 {} 信息完成".format(self.unit_name))
 
 
 if __name__ == '__main__':
     icp = IcpQuery()
-    print(icp.get_icp_info("小米科技有限责任公司"))
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', dest='paths', help='指定批量查询关键词文本')
+    parser.add_argument('-n', dest='key', help='指定查询关键词文本')
+    args = parser.parse_args()
+    if args.key:
+        r = icp.get_icp_info(args.key)
+        icp.export_excel(r)
+    elif args.paths:
+        paths = args.paths
+        with open(paths, "r", encoding='UTF-8') as files:
+            file_data = files.readlines()  # 读取文件
+            r = []
+            for fi_s in file_data:
+                fi_s = fi_s.strip('\n')
+                r.extend(icp.get_icp_info(fi_s))
+            icp.export_excel(r)
