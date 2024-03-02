@@ -63,6 +63,7 @@ class IcpQuery(object):
         self.headers = self.build_headers()
         self.p_uuid = ""
         self.unit_name = ""
+        self.service_type = 1
 
     def _init_session(self):
         self.session = requests.session()
@@ -124,6 +125,8 @@ class IcpQuery(object):
     def check_img(self):
         uuid = get_uid()
         with self.session.post(self.url + "image/getCheckImagePoint", json=uuid, headers=self.headers) as req:
+            if req.json()["code"] == 401:
+                self.headers = self.build_headers()
             res = req.json()['params']
             big_image = res['bigImage']
             small_image = res['smallImage']
@@ -169,6 +172,7 @@ class IcpQuery(object):
         fastapp 8
         """
         self.unit_name = unit_name
+        self.service_type = service_type
         self.check_img()
         page = 1
         if page_num != 0:
@@ -197,10 +201,19 @@ class IcpQuery(object):
         logger.info("导出 {} 信息".format(self.unit_name))
         if not os.path.exists("res"):
             os.mkdir("res")
-        xlsx = pd.ExcelWriter(r"res/{}-{}-{}.xlsx".format(datetime.date.today(), str(uuid.uuid4())[:4], self.unit_name))
-        app_names = ['contentTypeName', 'domain', 'domainId', 'leaderName', 'limitAccess', 'mainId', 'mainLicence',
+        xlsx = pd.ExcelWriter(r"res/{}-{}-{}.xlsx".format(datetime.date.today(), str(uuid.uuid4())[:3], self.unit_name))
+        icp_names = ['contentTypeName', 'domain', 'domainId', 'leaderName', 'limitAccess', 'mainId', 'mainLicence',
                      'natureName', 'serviceId', 'serviceLicence', 'unitName', 'updateRecordTime']
-        icp_info = pd.DataFrame(data, columns=app_names)
+        app_names = ["cityId", "countyId", "dataId", "leaderName", "mainId", "mainLicence", "mainUnitAddress",
+                     "mainUnitCertNo", "mainUnitCertType", "natureId", "natureName", "provinceId", "serviceId",
+                     "serviceLicence", "serviceName", "serviceType", "unitName", "updateRecordTime", "version"]
+
+        if self.service_type == 1:
+            col_names = icp_names
+        else:
+            col_names = app_names
+
+        icp_info = pd.DataFrame(data, columns=col_names)
         icp_info.to_excel(xlsx, sheet_name="ICP备案", index=False)
         xlsx.close()
         logger.info("导出 {} 信息完成".format(self.unit_name))
